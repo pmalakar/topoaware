@@ -1,0 +1,123 @@
+
+variable        output_freq string    200 
+variable        xyz_freq    string    200
+variable        input       string    lmp
+variable        problem     string    hcl
+variable        output_file string    lmp.lammpstrj
+variable        out_file1   string    lmp.lammpstrj.rdf
+variable        out_file2   string    lmp.lammpstrj.msd.bin2d
+variable        out_file3   string    lmp.lammpstrj.msd.bin1d
+variable        msdout	   	string    lmp.lammpstrj.msd
+variable        vacfout	   	string    lmp.lammpstrj.vacf
+variable        num_steps   string    1000
+variable        Nevery      string    50
+variable        Nfreq       string    100
+variable        neigh_freq  string    50
+
+units           real
+atom_style      full
+
+partition yes 1 processors ${p1_x} ${p1_y} ${p1_z}
+partition yes 2 processors ${p2_x} ${p2_y} ${p2_z}
+
+pair_style      lj/cut/coul/long 9.0
+pair_modify     mix arithmetic
+
+bond_style      hybrid harmonic morse
+angle_style     harmonic
+dihedral_style  none
+improper_style  none
+
+kspace_style    pppm 1e-4
+kspace_modify   collective no fftbench yes
+
+read_data       ${input}.${problem}.data
+
+#replicate       64 32 32
+replicate       ${repl_dim} ${repl_dim} ${repl_dim}
+
+bond_coeff      1  harmonic 529.581    1.012              # OW-HW
+#bond_coeff      2  morse     88.960    2.100     1.00     # OP-HP
+bond_coeff      2  harmonic 529.581    1.012              # OW-HW
+
+angle_coeff     1  37.95    113.24   # OW-HW-OW
+angle_coeff     2  38.7434  111.7269 # OP-HP-OP
+
+pair_coeff      * *  0.0       0.0
+pair_coeff      1 1  0.155425  3.16549  # OW - OW
+pair_coeff      1 3  0.12380   3.142    # OW - OP
+pair_coeff      1 4  0.0025115 1.582746 # OW - HP
+pair_coeff      3 3  0.09861   3.11851  # OP - OP
+pair_coeff      1 5  0.12467   3.7827   # OW - Cl
+pair_coeff      2 5  0.0001    1.0      # HW - Cl
+pair_coeff      3 5  0.09930   3.7593   # OP - Cl
+pair_coeff      4 5  0.0001    1.0      # HP - Cl
+pair_coeff      5 5  0.1000    4.400    # Cl - Cl
+
+neighbor        2.0 bin
+neigh_modify    every ${neigh_freq} delay ${neigh_freq}
+
+timestep        0.5
+
+thermo_style    custom step temp pe etotal
+thermo          ${output_freq}
+
+#fix             1 all nve
+fix             2 all nvt temp 300.0 300.0 200.0
+
+run_style				verlet/splitanalysis ${neigh_freq}
+
+#partition yes 1 dump            1 all custom/mpiio ${xyz_freq} ${output_file} id mol type x y z
+
+#restart         10000 evb.restart
+
+# -- Compute hydronium-water, hydronium-hydronium, and hydronium-ion RDFs averaged over all molecules
+# -- Collect data every 100 steps, but only write to file at end of simulation
+partition yes 2 compute         hydronium_rdf all rdf 200 3 *  4 *
+#partition yes 2 fix             hydronium_rdf all ave/time ${Nevery} 2 ${Nfreq} c_hydronium_rdf[*] mode vector
+partition yes 2 fix             hydronium_rdf all ave/time ${Nevery} 2 ${Nfreq} c_hydronium_rdf[*] file rdf.hydronium.dat mode vector
+
+# -- Compute ion-water and ion-ion RDFs averaged over all molecules
+# -- Collect data every 100 steps, but only write to file at end of simulation
+partition yes 2 compute         ion_rdf all rdf 200 5 1*2  5 5
+#partition yes 2 fix             ion_rdf all ave/time ${Nevery} 2 ${Nfreq} c_ion_rdf[*] mode vector
+partition yes 2 fix             ion_rdf all ave/time ${Nevery} 2 ${Nfreq} c_ion_rdf[*] file rdf.ion.dat mode vector
+
+# -- Compute Mean Squared Displacements averaged over all hydronium and ions
+# -- At end of each 100th step, the MSD for each molecule is written to file for further processing
+partition yes 2 compute         bin2d_mol_chunk all chunk/atom bin/2d x lower 1.0 y lower 1.0
+partition yes 2 compute         bin2d_msd all msd/chunk bin2d_mol_chunk
+#partition yes 2 fix             bin2d_msd all ave/time ${Nevery} 1 ${Nfreq} c_bin2d_msd[*] ave one mode vector
+partition yes 2 fix             bin2d_msd all ave/time ${Nevery} 1 ${Nfreq} c_bin2d_msd[*] ave one file msd.bin2d.dat mode vector format "%8.4g"
+
+partition yes 2 compute         bin1d_mol_chunk all chunk/atom bin/1d z lower 1.0 
+partition yes 2 compute         bin1d_msd all msd/chunk bin1d_mol_chunk
+#partition yes 2 fix             bin1d_msd all ave/time ${Nevery} 1 ${Nfreq} c_bin1d_msd[*] ave one mode vector
+partition yes 2 fix             bin1d_msd all ave/time ${Nevery} 1 ${Nfreq} c_bin1d_msd[*] ave one file msd.bin1d.dat mode vector format "%8.4g"
+
+partition yes 2 compute         mol_chunk all chunk/atom molecule
+partition yes 2 compute         all_msd all msd/chunk mol_chunk
+#partition yes 2 fix             all_msd all ave/time ${Nevery} 2 ${Nfreq} c_all_msd[*] mode vector
+partition yes 2 fix             all_msd all ave/time ${Nevery} 2 ${Nfreq} c_all_msd[*] file msd.all.dat mode vector
+
+# -- Compute a velocity auto-correlation function for the water-oxygen, hydronium-oxygen, and ion atoms
+# -- At end of each 100th step, the MSD for each molecule is written to file for further processing
+partition yes 2 group           water_oxygen_atoms type 1
+partition yes 2 compute         water_oxygen_vacf water_oxygen_atoms vacf
+#partition yes 2 fix             water_oxygen_vacf all ave/time ${Nevery} 1 ${Nevery} c_water_oxygen_vacf[*] mode vector
+partition yes 2 fix             water_oxygen_vacf all ave/time ${Nevery} 1 ${Nevery} c_water_oxygen_vacf[*] file vacf.water.dat mode vector
+
+partition yes 2 group           hydronium_oxygen_atoms type 1
+partition yes 2 compute         hydronium_oxygen_vacf hydronium_oxygen_atoms vacf
+#partition yes 2 fix             hydronium_oxygen_vacf all ave/time ${Nevery} 1 ${Nevery} c_hydronium_oxygen_vacf[*] mode vector
+partition yes 2 fix             hydronium_oxygen_vacf all ave/time ${Nevery} 1 ${Nevery} c_hydronium_oxygen_vacf[*] file vacf.hydronium.dat mode vector
+
+partition yes 2 group           ion_atoms type 1
+partition yes 2 compute         ion_vacf ion_atoms vacf
+#partition yes 2 fix             ion_vacf all ave/time ${Nevery} 1 ${Nevery} c_ion_vacf[*] mode vector
+partition yes 2 fix             ion_vacf all ave/time ${Nevery} 1 ${Nevery} c_ion_vacf[*] file vacf.ion.dat mode vector
+
+run             ${num_steps}
+
+#write_restart   evb.restart
+

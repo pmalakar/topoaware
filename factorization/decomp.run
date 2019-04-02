@@ -1,0 +1,17 @@
+reset;
+option solver_msg 0;
+option solver minlp;
+#option solver cplex;
+model decomp.mod;
+data decomp.dat;
+solve;
+display P_simulation+P_analysis, P_simulation, P_analysis, P_simulation/P_analysis;
+#display k_simulation_1, k_simulation_2, k_simulation_3;
+#display k_analysis_1, k_analysis_2, k_analysis_3;
+display prod {i in 1..NumFactors} Factors[i]^k_simulation_1[i],
+prod {i in 1..NumFactors} Factors[i]^k_simulation_2[i],
+prod {i in 1..NumFactors} Factors[i]^k_simulation_3[i],
+prod {i in 1..NumFactors} Factors[i]^k_analysis_1[i],
+prod {i in 1..NumFactors} Factors[i]^k_analysis_2[i],
+prod {i in 1..NumFactors} Factors[i]^k_analysis_3[i];
+#display _ampl_time,_ampl_elapsed_time,_solve_elapsed_time,_solve_time,_total_solve_elapsed_time;

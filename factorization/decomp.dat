@@ -1,0 +1,9 @@
+param P_simulation := 2560;
+param P_analysis := 1280;
+
+param NumFactors := 2;
+
+param Factors := 1 2, 2 5;
+param Mult_simulation := 1 9, 2 1;
+param Mult_analysis := 1 8, 2 1;
+
